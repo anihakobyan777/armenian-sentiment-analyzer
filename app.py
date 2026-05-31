@@ -1,70 +1,117 @@
 import streamlit as st
 import pandas as pd
-import joblib
-import re
+import google.generativeai as genai
 import plotly.express as px
 import time
+import random
 
-model = joblib.load('sentiment_model.pkl')
-vectorizer = joblib.load('vectorizer.pkl')
+# --- ԿՈՆՖԻԳՈՒՐԱՑԻԱ ---
+GEMINI_API_KEY = "AQ.Ab8RN6LDfVT5uKj6lG_4KSaMLy6WhWF0VnbMZRYFpRPI4eebMw"
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-def clean_text(text):
-    text = str(text).lower()
-    text = re.sub(r'[^ա-ֆԱ-Ֆև\s]', '', text)
-    return text
+st.set_page_config(layout="wide", page_title="AI Market Intelligence")
 
-st.set_page_config(layout="wide", page_title="AI E-commerce Analyzer")
+# --- SESSION STATE (Տվյալների պահպանում) ---
+if 'user' not in st.session_state:
+    st.session_state.user = {'logged_in': False, 'xp': 0, 'level': 1, 'history': [], 'limit': 5}
 
-st.sidebar.title("🛠 Կառավարման վահանակ")
-mode = st.sidebar.radio("Ընտրեք գործիքը", ["Հղումով վերլուծություն", "Ֆայլի վերբեռնում", "Մեկ տեքստի ստուգում"])
+def update_xp(amount):
+    st.session_state.user['xp'] += amount
+    st.session_state.user['level'] = (st.session_state.user['xp'] // 100) + 1
+    st.session_state.user['limit'] = 5 + (st.session_state.user['level'] - 1) * 2
 
-if mode == "Հղումով վերլուծություն":
-    st.title("🔗 Վերլուծություն ըստ ապրանքի հղման")
-    url = st.text_input("Տեղադրեք ապրանքի հղումը (Wildberries, Temu, Amazon...)")
+# --- AI ՎԵՐԼՈՒԾՈՒԹՅԱՆ ՖՈՒՆԿՑԻԱ ---
+def analyze_with_ai(data, mode="buyer"):
+    prompt = f"""
+    Վերլուծիր հետևյալ ապրանքի մեկնաբանությունները հայերենով:
+    Տվյալներ: {data}
     
-    if st.button("Ստանալ մեկնաբանությունները"):
+    Եթե mode-ը 'buyer' է, տուր կարճ դատավճիռ (Գնել թե ոչ) և Pros/Cons:
+    Եթե mode-ը 'seller' է, նշիր Pain Points-ը (ինչից են դժգոհում) և SWOT վերլուծություն:
+    Հաշվի առ տրանսլիտը և ռուսերենը:
+    """
+    response = model.generate_content(prompt)
+    return response.text
+
+# --- SIDEBAR (Գրանցում և XP) ---
+with st.sidebar:
+    st.title("🏆 User Profile")
+    if not st.session_state.user['logged_in']:
+        with st.expander("Մուտք / Գրանցում"):
+            username = st.text_input("Օգտանուն")
+            if st.button("Մուտք"):
+                st.session_state.user['logged_in'] = True
+                st.success(f"Բարի գալուստ, {username}")
+                st.rerun()
+    else:
+        st.info(f"Մակարդակ: {st.session_state.user['level']}")
+        st.progress(min(st.session_state.user['xp'] % 100 / 100, 1.0))
+        st.write(f"XP: {st.session_state.user['xp']}")
+        st.write(f"Օրական լիմիտ: {st.session_state.user['limit']} ստուգում")
+        
+    st.divider()
+    menu = st.radio("Գործիքներ", ["🛒 Գնորդի համար", "💼 Վաճառողի համար", "📜 Պատմություն"])
+
+# --- ՄԱՍ 1: ԳՆՈՐԴԻ ՀԱՄԱՐ ---
+if menu == "🛒 Գնորդի համար":
+    st.title("🛒 Գնորդի Օգնական")
+    url = st.text_input("Տեղադրեք հղումը (WB, Ozon, Temu, Amazon, AliExpress...)")
+    
+    if st.button("Վերլուծել"):
         if url:
-            with st.spinner('Կապ հաստատում հարթակի հետ...'):
-                time.sleep(2)
-                st.info(f"Միացում {url.split('.')[1]} հարթակին հաջողվեց:")
+            with st.spinner("AI-ն վերլուծում է քոմենթները..."):
+                time.sleep(2) # Սիմուլյացիա (Scraping)
                 
-            with st.spinner('Հավաքագրվում են հայերեն մեկնաբանությունները...'):
-                time.sleep(3) 
-                df = pd.read_csv('ecom_reviews.csv').sample(20) 
+                # Սիմուլյացված տվյալներ (հետագայում կփոխարինվի իրական scraping-ով)
+                mock_data = "Լավն էր բայց ուշ եկավ. Higly recommended! Shat lavn e, hianali ashxatum e."
+                result = analyze_with_ai(mock_data, mode="buyer")
                 
-                df['cleaned'] = df['comment'].apply(clean_text)
-                df['prediction'] = model.predict(vectorizer.transform(df['cleaned']))
-                df['sentiment'] = df['prediction'].map({1: 'Դրական', 0: 'Բացասական'})
+                st.subheader("🤖 AI Դատավճիռ")
+                st.write(result)
                 
-                st.success("Տվյալները հաջողությամբ ներբեռնվեցին:")
+                # Cross-platform իմիտացիա
+                st.divider()
+                st.subheader("💰 Գների համեմատություն այլ հարթակներում")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Ozon", "12,500 ֏", "-500 ֏")
+                col2.metric("Wildberries", "13,000 ֏", "+200 ֏")
+                col3.metric("Temu", "9,800 ֏", "Ամենաէժան", delta_color="normal")
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    fig_pie = px.pie(df, names='sentiment', title="Տոնայնության բաշխումը հղումով",
-                                     color='sentiment', color_discrete_map={'Դրական':'green', 'Բացասական':'red'})
-                    st.plotly_chart(fig_pie)
-                with col2:
-                    st.write("Վերջին մեկնաբանությունները հղումից՝")
-                    st.dataframe(df[['comment', 'sentiment']].head(10))
+                update_xp(15)
+                st.session_state.user['history'].append(f"Գնորդի ստուգում: {url}")
+                st.balloons()
         else:
-            st.error("Խնդրում ենք տեղադրել վավեր հղում:")
+            st.warning("Խնդրում ենք հղում տեղադրել")
 
-elif mode == "Ֆայլի վերբեռնում":
-    st.title("📂 Զանգվածային վերլուծություն ֆայլից")
-    uploaded_file = st.file_uploader("Բեռնեք CSV ֆայլը", type=['csv'])
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        df['cleaned'] = df['comment'].apply(clean_text)
-        df['sentiment'] = model.predict(vectorizer.transform(df['cleaned']))
-        df['sentiment'] = df['sentiment'].map({1: 'Դրական', 0: 'Բացասական'})
-        st.dataframe(df)
-        st.bar_chart(df['sentiment'].value_counts())
+# --- ՄԱՍ 2: ՎԱՃԱՌՈՂԻ ՀԱՄԱՐ ---
+elif menu == "💼 Վաճառողի համար":
+    st.title("💼 Seller Analytics Pro")
+    tab1, tab2 = st.tabs(["Link Analysis", "CSV Batch"])
+    
+    with tab1:
+        s_url = st.text_input("Մրցակցի կամ Ձեր ապրանքի հղումը")
+        if st.button("Ստանալ Business Insights"):
+            with st.spinner("Կատարվում է խորը վերլուծություն..."):
+                res = analyze_with_ai("Փաթեթավորումը պատռված էր: Товар отличный, но доставка долгая.", mode="seller")
+                st.markdown(res)
+                update_xp(25)
+                st.session_state.user['history'].append(f"Վաճառողի ստուգում: {s_url}")
 
-else:
-    st.title("📝 Արագ ստուգում")
-    text = st.text_area("Գրեք մեկնաբանություն...")
-    if st.button("Ստուգել"):
-        cleaned = clean_text(text)
-        pred = model.predict(vectorizer.transform([cleaned]))[0]
-        res = "Դրական ✅" if pred == 1 else "Բացասական ❌"
-        st.subheader(f"Արդյունք: {res}")
+    with tab2:
+        file = st.file_uploader("Բեռնել CSV ֆայլը", type=['csv'])
+        if file:
+            df = pd.read_csv(file)
+            st.write("Ֆայլը բեռնված է: AI-ն պատրաստ է վերլուծել", len(df), "տող:")
+            if st.button("Սկսել մասսայական վերլուծություն"):
+                update_xp(50)
+                st.success("Վերլուծությունը ավարտված է: (XP +50)")
+
+# --- ՄԱՍ 3: ՊԱՏՄՈՒԹՅՈՒՆ ---
+elif menu == "📜 Պատմություն":
+    st.title("📜 Ձեր ստուգումների պատմությունը")
+    if st.session_state.user['history']:
+        for item in reversed(st.session_state.user['history']):
+            st.write(f"- {item}")
+    else:
+        st.write("Պատմությունը դատարկ է:")
