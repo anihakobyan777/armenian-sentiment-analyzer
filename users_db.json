@@ -1,0 +1,11 @@
+{
+    "admin": {
+        "password": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+        "role": "Գնորդ",
+        "xp": 0,
+        "history": [],
+        "checks_today": 0,
+        "last_check_date": "2024-01-01",
+        "perm_upgrades": 0
+    }
+}
