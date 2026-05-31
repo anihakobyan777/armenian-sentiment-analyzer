@@ -6,7 +6,7 @@ import time
 import random
 
 # --- ԿՈՆՖԻԳՈՒՐԱՑԻԱ ---
-GEMINI_API_KEY = "AQ.Ab8RN6LDfVT5uKj6lG_4KSaMLy6WhWF0VnbMZRYFpRPI4eebMw"
+GEMINI_API_KEY = st.secrets["GEMINI_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
