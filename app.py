@@ -110,10 +110,10 @@ def fetch_data(url):
     # --- 1. ՆԱԽԱՊԱՏՐԱՍՏՎԱԾ ԴԵՄՈ ՏՎՅԱԼՆԵՐ (Fallback Data) ---
     demo_items = [
         {"text": "Shat lav koshikner en, vorakը hianali e, mersi!", "rating": 5},
-        {"text": "Es inch anvorak ban eq uxarkel, lriv kshrvac er, hiasptapvac em", "rating": 1},
+        {"text": "Es inch eq uxarkel, lriv kshrvac er, hiasptapvac em", "rating": 1},
         {"text": "Arag araqum, bayc mi kich tank er, vorak@ normal a", "rating": 4},
         {"text": "Very comfortable shoes, fast delivery. Worth the price.", "rating": 5},
-        {"text": "Anvorak ban er, mi orva mej ktrvec, mi gneq sranic", "rating": 1},
+        {"text": "Vat er, mi orva mej ktrvec, mi gneq sranic", "rating": 1},
         {"text": "Отличное качество, оригинал, очень доволен покупкой!", "rating": 5},
         {"text": "Normal apranq e, bayc guyn@ mi kich bac er ekel", "rating": 3},
         {"text": "The box was damaged and shoes look fake. Do not buy!", "rating": 1}
