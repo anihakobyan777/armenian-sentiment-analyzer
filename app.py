@@ -139,27 +139,40 @@ def fetch_data(url):
 
         # --- AMAZON LOGIC ---
         if "amazon" in url.lower():
-            blocks = driver.find_elements(By.CSS_SELECTOR, ".a-section.review")
-            for b in blocks:
+            # Փորձում ենք գտնել մեկնաբանության բլոկները տարբեր դասերով
+            review_selectors = ["[data-hook='review']", ".a-section.review", ".review-text-content"]
+            found_elements = []
+            for sel in review_selectors:
+                found_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                if found_elements: break
+
+            for b in found_elements:
                 try:
-                    text = b.find_element(By.CSS_SELECTOR, "span[data-hook='review-body']").text.strip()
-                    star_text = b.find_element(By.CSS_SELECTOR, "i[data-hook='review-star-rating']").get_attribute("innerHTML")
-                    rating = int(float(re.search(r"(\d+\.?\d?)", star_text).group(1)))
+                    # Փորձում ենք գտնել հենց տեքստի բաժինը
+                    text_el = b.find_element(By.CSS_SELECTOR, "span[data-hook='review-body'], .review-text")
+                    text = text_el.text.strip()
                     if len(text) > 10:
-                        found_items.append({"text": text, "rating": rating})
+                        found_items.append({"text": text, "rating": 4}) # Լռելյայն 4
                 except:
                     continue
 
         # --- OZON LOGIC ---
         elif "ozon" in url.lower():
-            # Ozon-ի համար փնտրում ենք տեքստային բլոկները (սելեկտորները կարող են փոխվել)
-            texts = driver.find_elements(By.CSS_SELECTOR, "span.tsBodyM")
-            for t in texts:
-                val = t.text.strip()
-                if len(val) > 20:
-                    # Քանի որ Ozon-ի աստղերը դժվար է քաղել առանց բլոկավորվելու, դնում ենք 5
-                    found_items.append({"text": val, "rating": 5})
-
+            # Փորձում ենք մի քանի տարբեր սելեկտորներ, որոնք Ozon-ը օգտագործում է
+            selectors = ["span.tsBodyM", "div.uv2", "div.v0u", "span.q8n"]
+            texts_found = []
+            
+            for selector in selectors:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                for el in elements:
+                    val = el.text.strip()
+                    if len(val) > 20: # Միայն երկար տեքստերը
+                        texts_found.append(val)
+                if texts_found: break # Եթե գտանք, էլ չենք շարունակում մյուսներով
+            
+            for t in texts_found:
+                found_items.append({"text": t, "rating": 5})
+                
         driver.quit()
 
         if not found_items:
