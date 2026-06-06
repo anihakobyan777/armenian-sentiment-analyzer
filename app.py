@@ -104,85 +104,83 @@ def generate_local_summary(text_list):
 
 # --- 4. SCRAPER ---
 
+from selenium_stealth import stealth
+
 def fetch_data(url):
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome=119.0.0.0 Safari/537.36")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
 
     driver = None
     try:
-        # 1. ՓՈՐՁՈՒՄ ԵՆՔ ՄԻԱՑՆԵԼ STREAMLIT CLOUD-Ի ԿԱՐԳԱՎՈՐՈՒՄՆԵՐՈՎ
         if os.path.exists("/usr/bin/chromium"):
             options.binary_location = "/usr/bin/chromium"
             service = Service("/usr/bin/chromedriver")
             driver = webdriver.Chrome(service=service, options=options)
         else:
-            # 2. ԵԹԵ ՉԿԱ (ԱՅՍԻՆՔՆ ԼՈԿԱԼ ՀԱՄԱԿԱՐԳԻՉ Է), ՕԳՏԱԳՈՐԾՈՒՄ ԵՆՔ WEBDRIVER_MANAGER
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
-        
-        driver.set_page_load_timeout(30)
+
+        # Կիրառում ենք Stealth՝ բոտ լինելը թաքցնելու համար
+        stealth(driver,
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Win32",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True,
+        )
+
+        # Amazon-ի համար փոխում ենք հղումը դեպի «բոլոր մեկնաբանությունները», որն ավելի հեշտ է կարդալ
+        if "amazon.com" in url.lower() and "/dp/" in url.lower():
+            asin = url.split("/dp/")[1].split("/")[0].split("?")[0]
+            url = f"https://www.amazon.com/product-reviews/{asin}/ref=cm_cr_dp_d_show_all_btm?ie=UTF8&reviewerType=all_reviews"
+
         driver.get(url)
-        
-        # Սպասում ենք, որ էջը բեռնվի (JS-ը աշխատի)
-        time.sleep(7)
-        
-        # Սքրոլ ենք անում ներքև՝ լրացուցիչ մեկնաբանություններ բեռնելու համար
-        driver.execute_script("window.scrollTo(0, 2000);")
-        time.sleep(3)
-        
+        time.sleep(8) # Սպասում ենք ավելի երկար
+
         found_items = []
 
         # --- AMAZON LOGIC ---
         if "amazon" in url.lower():
-            # Փորձում ենք գտնել մեկնաբանության բլոկները տարբեր դասերով
-            review_selectors = ["[data-hook='review']", ".a-section.review", ".review-text-content"]
-            found_elements = []
-            for sel in review_selectors:
-                found_elements = driver.find_elements(By.CSS_SELECTOR, sel)
-                if found_elements: break
-
-            for b in found_elements:
+            # Փորձում ենք գտնել մեկնաբանության բլոկները
+            reviews = driver.find_elements(By.CSS_SELECTOR, "div[data-hook='review']")
+            for r in reviews:
                 try:
-                    # Փորձում ենք գտնել հենց տեքստի բաժինը
-                    text_el = b.find_element(By.CSS_SELECTOR, "span[data-hook='review-body'], .review-text")
-                    text = text_el.text.strip()
+                    text = r.find_element(By.CSS_SELECTOR, "span[data-hook='review-body']").text.strip()
+                    stars_el = r.find_element(By.CSS_SELECTOR, "i[data-hook='review-star-rating'] span.a-icon-alt")
+                    rating = int(float(stars_el.get_attribute("innerHTML").split()[0]))
                     if len(text) > 10:
-                        found_items.append({"text": text, "rating": 4}) # Լռելյայն 4
-                except:
-                    continue
+                        found_items.append({"text": text, "rating": rating})
+                except: continue
 
         # --- OZON LOGIC ---
         elif "ozon" in url.lower():
-            # Փորձում ենք մի քանի տարբեր սելեկտորներ, որոնք Ozon-ը օգտագործում է
-            selectors = ["span.tsBodyM", "div.uv2", "div.v0u", "span.q8n"]
-            texts_found = []
-            
-            for selector in selectors:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                for el in elements:
-                    val = el.text.strip()
-                    if len(val) > 20: # Միայն երկար տեքստերը
-                        texts_found.append(val)
-                if texts_found: break # Եթե գտանք, էլ չենք շարունակում մյուսներով
-            
-            for t in texts_found:
-                found_items.append({"text": t, "rating": 5})
-                
+            # Ozon-ը շատ բարդ է, փորձում ենք գտնել բոլոր span-ները, որոնք ունեն երկար տեքստ
+            spans = driver.find_elements(By.TAG_NAME, "span")
+            for s in spans:
+                try:
+                    val = s.text.strip()
+                    # Ozon-ի մեկնաբանությունները սովորաբար երկար են և չունեն կոնկրետ դաս (class)
+                    if len(val) > 40 and not any(x in val for x in ["©", "Ozon", "Доставка", "Цена"]):
+                        found_items.append({"text": val, "rating": 5})
+                except: continue
+
         driver.quit()
 
-        if not found_items:
-            return None, "Տվյալներ չգտնվեցին: Հնարավոր է կայքը պաշտպանված է ռոբոտներից:"
-            
-        return found_items, None
+        if len(found_items) > 0:
+            # Հեռացնում ենք կրկնվող մեկնաբանությունները
+            unique_items = {v['text']: v for v in found_items}.values()
+            return list(unique_items), None
+        
+        return None, "Տվյալներ չգտնվեցին: Կայքը հայտնաբերեց բոտին կամ էջը դատարկ է:"
 
     except Exception as e:
-        if driver:
-            driver.quit()
+        if driver: driver.quit()
         return None, f"Կապի սխալ: {str(e)}"
         
 # --- 5. DATA & AUTH ---
