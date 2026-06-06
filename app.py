@@ -103,76 +103,75 @@ def generate_local_summary(text_list):
     return list(found_pros), list(found_cons)
 
 # --- 4. SCRAPER ---
+
 def fetch_data(url):
     options = Options()
-    
-    options.add_argument("--headless")  # Աշխատեցնել առանց բրաուզերի պատուհանը բացելու
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
-    
-    # Կեղծում ենք բրաուզերի տվյալները, որ կայքը չհասկանա, որ սա ռոբոտ է
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome=119.0.0.0 Safari/537.36")
 
     driver = None
     try:
-        # Սկզբնավորում ենք Driver-ը
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
+        # 1. ՓՈՐՁՈՒՄ ԵՆՔ ՄԻԱՑՆԵԼ STREAMLIT CLOUD-Ի ԿԱՐԳԱՎՈՐՈՒՄՆԵՐՈՎ
+        if os.path.exists("/usr/bin/chromium"):
+            options.binary_location = "/usr/bin/chromium"
+            service = Service("/usr/bin/chromedriver")
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            # 2. ԵԹԵ ՉԿԱ (ԱՅՍԻՆՔՆ ԼՈԿԱԼ ՀԱՄԱԿԱՐԳԻՉ Է), ՕԳՏԱԳՈՐԾՈՒՄ ԵՆՔ WEBDRIVER_MANAGER
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
         
-        # Սահմանում ենք սպասման առավելագույն ժամանակ (30 վայրկյան)
         driver.set_page_load_timeout(30)
-        
         driver.get(url)
         
-        # Սպասում ենք, որ էջը բեռնվի
-        time.sleep(6) 
+        # Սպասում ենք, որ էջը բեռնվի (JS-ը աշխատի)
+        time.sleep(7)
         
-        # Իջնում ենք մի փոքր ներքև, որպեսզի lazy-load տարրերը հայտնվեն
+        # Սքրոլ ենք անում ներքև՝ լրացուցիչ մեկնաբանություններ բեռնելու համար
         driver.execute_script("window.scrollTo(0, 2000);")
         time.sleep(3)
         
         found_items = []
-        
-        # --- AMAZON SCRAPING LOGIC ---
+
+        # --- AMAZON LOGIC ---
         if "amazon" in url.lower():
             blocks = driver.find_elements(By.CSS_SELECTOR, ".a-section.review")
             for b in blocks:
                 try:
-                    text_el = b.find_element(By.CSS_SELECTOR, "span[data-hook='review-body']")
-                    star_el = b.find_element(By.CSS_SELECTOR, "i[data-hook='review-star-rating']")
-                    
-                    text = text_el.text.strip()
-                    star_text = star_el.get_attribute("innerHTML")
-                    # Քաղում ենք թվային արժեքը (օրինակ՝ "4.0 out of 5 stars" -> 4)
+                    text = b.find_element(By.CSS_SELECTOR, "span[data-hook='review-body']").text.strip()
+                    star_text = b.find_element(By.CSS_SELECTOR, "i[data-hook='review-star-rating']").get_attribute("innerHTML")
                     rating = int(float(re.search(r"(\d+\.?\d?)", star_text).group(1)))
-                    
-                    if len(text) > 5:
+                    if len(text) > 10:
                         found_items.append({"text": text, "rating": rating})
                 except:
                     continue
 
-        # --- OZON SCRAPING LOGIC ---
+        # --- OZON LOGIC ---
         elif "ozon" in url.lower():
-            # Ozon-ի դեպքում սելեկտորները հաճախ փոխվում են, սա ամենաթարմ տարբերակն է
+            # Ozon-ի համար փնտրում ենք տեքստային բլոկները (սելեկտորները կարող են փոխվել)
             texts = driver.find_elements(By.CSS_SELECTOR, "span.tsBodyM")
             for t in texts:
                 val = t.text.strip()
-                if len(val) > 15: # Զտում ենք կարճ կամ անիմաստ տեքստերը
-                    found_items.append({"text": val, "rating": 5}) # Ozon-ի համար դնում ենք default 5
-        
-        # Եթե ոչ մի տվյալ չգտանք
-        if not found_items:
-            return None, "Մեկնաբանություններ չգտնվեցին: Հնարավոր է էջը պաշտպանված է կամ սելեկտորները փոխվել են:"
+                if len(val) > 20:
+                    # Քանի որ Ozon-ի աստղերը դժվար է քաղել առանց բլոկավորվելու, դնում ենք 5
+                    found_items.append({"text": val, "rating": 5})
 
         driver.quit()
+
+        if not found_items:
+            return None, "Տվյալներ չգտնվեցին: Հնարավոր է կայքը պաշտպանված է ռոբոտներից:"
+            
         return found_items, None
 
     except Exception as e:
         if driver:
             driver.quit()
         return None, f"Կապի սխալ: {str(e)}"
+        
 # --- 5. DATA & AUTH ---
 def load_users():
     if os.path.exists(USER_DB):
