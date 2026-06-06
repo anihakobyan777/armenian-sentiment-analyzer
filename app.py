@@ -184,113 +184,255 @@ def save_users(users):
     with open(USER_DB, "w", encoding='utf-8') as f: json.dump(users, f, indent=4, ensure_ascii=False)
 
 def get_user_status(username, users_dict):
-    udata = users_dict[username]; xp = udata.get('xp', 0); level = (xp // XP_PER_LEVEL) + 1
+    # 1. Ստուգում ենք՝ արդյոք օգտատերը գոյություն ունի բազայում
+    if username not in users_dict:
+        # Եթե չկա, վերադարձնում ենք լռելյայն արժեքներ, որպեսզի ծրագիրը չփակվի
+        return 1, 0, 0, BASE_DAILY_LIMIT
+
+    udata = users_dict[username]
+    
+    # 2. Ստանում ենք XP-ն և հաշվարկում Level-ը
+    xp = udata.get('xp', 0)
+    level = (xp // XP_PER_LEVEL) + 1
+    
+    # 3. Օրական լիմիտների թարմացման տրամաբանություն
     today = datetime.now().strftime("%Y-%m-%d")
+    
+    # Եթե վերջին ստուգման ամսաթիվը այսօրվա ամսաթիվը չէ, զրոյացնում ենք այսօրվա քանակը
     if udata.get('last_check_date') != today:
-        udata['checks_today'] = 0; udata['last_check_date'] = today; save_users(users_dict)
+        udata['checks_today'] = 0
+        udata['last_check_date'] = today
+        save_users(users_dict) # Պահպանում ենք թարմացված տվյալները ֆայլում
+    
+    # 4. Հաշվարկում ենք ընդհանուր լիմիտը
+    # Հիմնական (5) + Մակարդակի բոնուս (level-1) + Հավելյալ գնված լիմիտներ
     limit = BASE_DAILY_LIMIT + (level - 1) + udata.get('perm_upgrades', 0)
-    remaining = max(0, limit - udata.get('checks_today', 0))
+    
+    # 5. Հաշվարկում ենք, թե քանի ստուգում է մնացել
+    checks_done = udata.get('checks_today', 0)
+    remaining = max(0, limit - checks_done)
+    
     return level, xp, remaining, limit
 
 # --- 6. UI ---
 users = load_users()
-if 'current_user' not in st.session_state: st.session_state.current_user = None
-if 'last_res' not in st.session_state: st.session_state.last_res = None
 
+# Ստուգում ենք session_state-ը
+if 'current_user' not in st.session_state: 
+    st.session_state.current_user = None
+if 'last_res' not in st.session_state: 
+    st.session_state.last_res = None
+
+# KeyError-ի դեմ պաշտպանություն. եթե օգտատերը սեսիայում կա, բայց բազայում չէ՝ logout
+if st.session_state.current_user and st.session_state.current_user not in users:
+    st.session_state.current_user = None
+    st.rerun()
+
+# --- ՄՈՒՏՔԻ ԵՎ ԳՐԱՆՑՄԱՆ ԷՋ ---
 if not st.session_state.current_user:
-    st.title("🛡️ AI Market Intelligence")
+    st.title("🛡️ Market Intelligence AI Pro")
+    st.markdown("##### Վերլուծեք շուկան ձեր սեփական ML օգնականի միջոցով")
+    
     t1, t2 = st.tabs(["🔐 Մուտք", "📝 Գրանցում"])
+    
     with t1:
-        u = st.text_input("Օգտանուն"); p = st.text_input("Գաղտնաբառ", type="password")
+        u = st.text_input("Օգտանուն", key="login_u")
+        p = st.text_input("Գաղտնաբառ", type="password", key="login_p")
         if st.button("Մուտք"):
             hp = hashlib.sha256(p.encode()).hexdigest()
-            if u in users and users[u]['password'] == hp: st.session_state.current_user = u; st.rerun()
-            else: st.error("Սխալ տվյալներ")
+            if u in users and users[u]['password'] == hp:
+                st.session_state.current_user = u
+                st.rerun()
+            else:
+                st.error("Սխալ օգտանուն կամ գաղտնաբառ")
+                
     with t2:
-        nu = st.text_input("Նոր օգտանուն"); np = st.text_input("Նոր գաղտնաբառ", type="password")
+        nu = st.text_input("Նոր օգտանուն", key="reg_u")
+        np = st.text_input("Նոր գաղտնաբառ", type="password", key="reg_p")
         if st.button("Գրանցվել"):
             if nu and np:
-                users[nu] = {"password": hashlib.sha256(np.encode()).hexdigest(), "role": "Գնորդ", "xp": 0, "history": [], "checks_today": 0, "last_check_date": "", "perm_upgrades": 0}
-                save_users(users); st.success("Գրանցված է:")
+                if nu in users:
+                    st.warning("Այս օգտանունը զբաղված է")
+                else:
+                    users[nu] = {
+                        "password": hashlib.sha256(np.encode()).hexdigest(),
+                        "role": "Գնորդ",
+                        "xp": 0,
+                        "history": [],
+                        "checks_today": 0,
+                        "last_check_date": datetime.now().strftime("%Y-%m-%d"),
+                        "perm_upgrades": 0
+                    }
+                    save_users(users)
+                    st.success("Գրանցումը հաջողվեց: Այժմ կարող եք մուտք գործել:")
+            else:
+                st.error("Լրացրեք բոլոր դաշտերը")
+
+# --- ՀԻՄՆԱԿԱՆ ԷՋ (ՄՈՒՏՔ ԳՈՐԾԵԼՈՒՑ ՀԵՏՈ) ---
 else:
-    uname = st.session_state.current_user; level, xp, remaining, total_limit = get_user_status(uname, users); udata = users[uname]
-    st.sidebar.title(f"👤 {uname}"); st.sidebar.markdown(f"<span class='xp-badge'>⭐ XP: {xp}</span>", unsafe_allow_html=True)
-    if st.sidebar.button("Logout"): st.session_state.current_user = None; st.rerun()
+    uname = st.session_state.current_user
+    # Ստանում ենք օգտատիրոջ կարգավիճակը
+    level, xp, remaining, total_limit = get_user_status(uname, users)
+    udata = users[uname]
+
+    # Sidebar տեղեկատվություն
+    st.sidebar.title(f"👤 {uname}")
+    st.sidebar.markdown(f"<span class='xp-badge'>⭐ Level: {level} | XP: {xp}</span>", unsafe_allow_html=True)
+    st.sidebar.write(f"📊 Օրական լիմիտ: {udata['checks_today']} / {total_limit}")
+    
+    if st.sidebar.button("Դուրս գալ (Logout)"):
+        st.session_state.current_user = None
+        st.session_state.last_res = None
+        st.rerun()
 
     tab_dash, tab_csv, tab_acc = st.tabs(["🚀 Վերլուծություն", "📁 CSV Ստուգում", "👤 Իմ Հաշիվը"])
 
+    # --- ՏԱԲ 1: ՎԵՐԼՈՒԾՈՒԹՅՈՒՆ ---
     with tab_dash:
         st.title("🛍️ Գնորդի Օգնական")
-        p_name = st.text_input("Ապրանքի անունը"); p_url = st.text_input("Հղում")
-        if st.button("Վերլուծել 🔍", disabled=remaining <= 0):
-            if p_name and p_url:
-                with st.spinner("Ստուգում ենք..."):
+        col_inp1, col_inp2 = st.columns([1, 2])
+        with col_inp1:
+            p_name = st.text_input("Ապրանքի անունը", placeholder="Օրինակ՝ iPhone 15 Pro")
+        with col_inp2:
+            p_url = st.text_input("Հղում (URL)", placeholder="Amazon, Ozon կամ այլ կայք...")
+
+        btn_analyze = st.button("Վերլուծել 🔍", disabled=remaining <= 0)
+        
+        if remaining <= 0:
+            st.error("Ձեր այսօրվա լիմիտը սպառվել է:")
+
+        if btn_analyze:
+            if not p_name or not p_url:
+                st.warning("Խնդրում ենք լրացնել անունը և հղումը")
+            else:
+                with st.spinner("AI-ն հավաքագրում և վերլուծում է տվյալները..."):
                     data, err = fetch_data(p_url)
-                    if err: st.error(err)
+                    if err:
+                        st.error(err)
                     elif data:
                         raw_texts = [d['text'] for d in data]
-                        avg_s = sum([d['rating'] for d in data]) / len(data)
-                        model, vec = ml_components
-                        txt_score = 50
-                        if model:
-                            v = vec.transform([" ".join(raw_texts).lower()])
-                            txt_score = int(model.predict_proba(v)[0][1] * 100)
+                        avg_stars = sum([d['rating'] for d in data]) / len(data)
                         
-                        final_p = int(((avg_s/5)*100 * 0.7) + (txt_score * 0.3))
+                        # ML ՎԵՐԼՈՒԾՈՒԹՅՈՒՆ (Օգտագործում ենք Colab-ում մարզված մոդելը)
+                        model, vec = ml_components
+                        sentiment_score = 50 # Default
+                        if model and vec:
+                            v = vec.transform([" ".join(raw_texts)])
+                            # Ստանում ենք դրական լինելու հավանականությունը %-ով
+                            sentiment_score = int(model.predict_proba(v)[0][1] * 100)
+                        
+                        # Վերջնական Verdict-ի հաշվարկ
+                        final_positivity = int((sentiment_score * 0.4) + ((avg_stars/5)*100 * 0.6))
                         pros, cons = generate_local_summary(raw_texts)
                         
-                        st.session_state.last_res = {"name": p_name, "pos": final_p, "stars": round(avg_s, 1), "pros": pros, "cons": cons}
-                        users[uname]['checks_today'] += 1; users[uname]['xp'] += 60; save_users(users); st.rerun()
+                        # Պահպանում ենք արդյունքը session_state-ում
+                        res_obj = {
+                            "name": p_name,
+                            "pos": final_positivity,
+                            "stars": round(avg_stars, 1),
+                            "pros": pros,
+                            "cons": cons,
+                            "time": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }
+                        st.session_state.last_res = res_obj
+                        
+                        # Թարմացնում ենք օգտատիրոջ պատմությունը և XP-ն
+                        users[uname]['checks_today'] += 1
+                        users[uname]['xp'] += 60
+                        users[uname]['history'].append(res_obj)
+                        save_users(users)
+                        st.rerun()
 
-        # ՈՒՂՂՎԱԾ ԲԱԺԻՆ (Fixed KeyError)
+        # ԱՐԴՅՈՒՆՔՆԵՐԻ ՑՈՒՑԱԴՐՈՒՄ
         if st.session_state.last_res:
             res = st.session_state.last_res
-            st.divider(); st.header(f"📊 {res.get('name', 'Անհայտ')}")
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.markdown(f"<div class='rating-display'>{res.get('stars', 0)} / 5 ⭐</div>", unsafe_allow_html=True)
-                fig = px.pie(values=[res.get('pos', 50), 100-res.get('pos', 50)], names=['Դրական', 'Բացասական'], color_discrete_sequence=['#28a745', '#dc3545'], hole=0.5)
+            st.divider()
+            st.header(f"📊 Արդյունք: {res['name']}")
+            
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.markdown(f"<div class='rating-display'>{res['stars']} / 5 ⭐</div>", unsafe_allow_html=True)
+                fig = px.pie(values=[res['pos'], 100-res['pos']], 
+                             names=['Դրական', 'Բացասական'], 
+                             color_discrete_sequence=['#28a745', '#dc3545'], 
+                             hole=0.6)
+                fig.update_layout(showlegend=False, height=250, margin=dict(t=0, b=0, l=0, r=0))
                 st.plotly_chart(fig, use_container_width=True)
-            with col2:
-                st.subheader("🤖 AI Insights (Local Summary)")
-                c_pro, c_con = st.columns(2)
-                with c_pro:
-                    st.write("✅ **Կողմեր:**")
-                    pros_list = res.get('pros', [])
-                    if pros_list:
-                        for p in pros_list: st.markdown(f"<div class='pro-box'>{p}</div>", unsafe_allow_html=True)
-                    else: st.write("Հստակ կողմեր չկան:")
-                with c_con:
-                    st.write("❌ **Դեմեր:**")
-                    cons_list = res.get('cons', [])
-                    if cons_list:
-                        for c in cons_list: st.markdown(f"<div class='con-box'>{c}</div>", unsafe_allow_html=True)
-                    else: st.write("Հստակ դեմեր չկան:")
                 
+                # Verdict Box
+                v_text = "ԳՆԵԼ" if res['pos'] > 70 else "ԶԳՈՒՇԱՆԱԼ" if res['pos'] > 40 else "ՉԳՆԵԼ"
+                v_color = "#e6f4ea" if res['pos'] > 70 else "#fff4e5" if res['pos'] > 40 else "#fce8e8"
+                st.markdown(f"<div class='verdict-box' style='background-color:{v_color};'>Verdict: {v_text}</div>", unsafe_allow_html=True)
+
+            with c2:
+                st.subheader("🤖 AI Insights (Custom ML)")
+                col_p, col_c = st.columns(2)
+                with col_p:
+                    st.write("✅ **Կողմեր:**")
+                    if res['pros']:
+                        for p in res['pros']: st.markdown(f"<div class='pro-box'>{p}</div>", unsafe_allow_html=True)
+                    else: st.write("Հստակ կողմեր չեն գտնվել")
+                with col_c:
+                    st.write("❌ **Դեմեր:**")
+                    if res['cons']:
+                        for c in res['cons']: st.markdown(f"<div class='con-box'>{c}</div>", unsafe_allow_html=True)
+                    else: st.write("Հստակ դեմեր չեն գտնվել")
+                
+                # Արագ հղումներ այլ խանութներում
                 st.write("🔎 Փնտրել այլ հարթակներում՝")
-                q = urllib.parse.quote(res.get('name', '')); cols = st.columns(4)
-                cols[0].link_button("Wildberries", f"https://www.wildberries.am/search?query={q}")
-                cols[1].link_button("Ozon", f"https://www.ozon.ru/search/?text={q}")
-                cols[2].link_button("Temu", f"https://www.temu.com/search_result.html?search_key={q}")
-                cols[3].link_button("Amazon", f"https://www.amazon.com/s?k={q}")
+                q = urllib.parse.quote(res['name'])
+                l1, l2, l3, l4 = st.columns(4)
+                l1.link_button("WB", f"https://www.wildberries.am/search?query={q}")
+                l2.link_button("Ozon", f"https://www.ozon.ru/search/?text={q}")
+                l3.link_button("Amazon", f"https://www.amazon.com/s?k={q}")
+                l4.link_button("Temu", f"https://www.temu.com/search_result.html?search_key={q}")
 
+    # --- ՏԱԲ 2: CSV ՎԵՐԼՈՒԾՈՒԹՅՈՒՆ ---
     with tab_csv:
-        st.title("📁 CSV Վերլուծություն")
-        uploaded_file = st.file_uploader("Վերբեռնեք CSV", type=["csv"])
-        if uploaded_file:
-            df_up = pd.read_csv(uploaded_file); column = st.selectbox("Սյունակը", df_up.columns)
-            if st.button("Սկսել"):
+        st.title("📁 Զանգվածային CSV Ստուգում")
+        st.info("Վերբեռնեք CSV ֆայլը, որտեղ կան մեկնաբանություններ, և մեր ML մոդելը կվերլուծի բոլորը միասին:")
+        
+        up_file = st.file_uploader("Ընտրեք ֆայլը", type=["csv"])
+        if up_file:
+            df_csv = pd.read_csv(up_file)
+            col_name = st.selectbox("Ընտրեք մեկնաբանությունների սյունակը", df_csv.columns)
+            
+            if st.button("Սկսել վերլուծությունը"):
                 model, vec = ml_components
-                if model:
-                    texts = df_up[column].astype(str).tolist(); vectors = vec.transform(texts); preds = model.predict(vectors)
-                    pos_perc = int((sum(preds) / len(preds)) * 100)
-                    st.metric("Դրական ֆոն", f"{pos_perc}%"); users[uname]['xp'] += 40; save_users(users)
+                if model and vec:
+                    with st.spinner("Վերլուծում ենք..."):
+                        texts = df_csv[col_name].astype(str).tolist()
+                        vectors = vec.transform(texts)
+                        preds = model.predict(vectors)
+                        
+                        pos_count = sum(preds)
+                        total = len(preds)
+                        pos_p = int((pos_count/total)*100)
+                        
+                        st.metric("Ընդհանուր դրական ֆոն", f"{pos_p}%")
+                        st.progress(pos_p / 100)
+                        st.write(f"✅ {pos_count} դրական | ❌ {total - pos_count} բացասական")
+                        
+                        users[uname]['xp'] += 40
+                        save_users(users)
+                else:
+                    st.error("ML Մոդելը բեռնված չէ:")
 
+    # --- ՏԱԲ 3: ՀԱՇԻՎ ---
     with tab_acc:
-        st.header("👤 Իմ Հաշիվը"); col_a1, col_a2 = st.columns(2)
-        with col_a1: st.metric("XP", xp); st.metric("Level", level)
-        with col_a2: st.metric("Ստուգումներ", f"{udata['checks_today']} / {total_limit}"); st.progress((xp % XP_PER_LEVEL) / XP_PER_LEVEL)
-        st.divider(); st.subheader("📜 Պատմություն")
-        h_list = udata.get('history', [])
-        for h in h_list[-10:][::-1]:
-            st.write(f"📦 **{h.get('name', '—')}** - {h.get('stars', '—')}⭐ ({h.get('pos', 0)}% Pos) - {h.get('time', '')}")
+        st.header("👤 Իմ Հաշիվը")
+        ca1, ca2, ca3 = st.columns(3)
+        ca1.metric("Ընդհանուր XP", xp)
+        ca2.metric("Մակարդակ", level)
+        ca3.metric("Մնացած լիմիտ", f"{remaining} / {total_limit}")
+        
+        st.subheader("📜 Վերջին ստուգումների պատմությունը")
+        history = udata.get('history', [])
+        if history:
+            for h in history[::-1][:10]: # Ցույց տալ վերջին 10-ը
+                with st.expander(f"📦 {h['name']} - {h['time']}"):
+                    st.write(f"Վարկանիշ: **{h['stars']} ⭐** | Դրականություն: **{h['pos']}%**")
+                    st.write(f"Կողմեր: {', '.join(h['pros']) if h['pros'] else '—'}")
+                    st.write(f"Դեմեր: {', '.join(h['cons']) if h['cons'] else '—'}")
+        else:
+            st.write("Դուք դեռ ստուգումներ չեք կատարել:")
