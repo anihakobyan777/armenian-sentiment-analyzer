@@ -104,30 +104,75 @@ def generate_local_summary(text_list):
 
 # --- 4. SCRAPER ---
 def fetch_data(url):
-    options = Options(); options.add_argument("--headless"); options.add_argument("--no-sandbox")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    options = Options()
+    
+    options.add_argument("--headless")  # Աշխատեցնել առանց բրաուզերի պատուհանը բացելու
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    
+    # Կեղծում ենք բրաուզերի տվյալները, որ կայքը չհասկանա, որ սա ռոբոտ է
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+
+    driver = None
     try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-        driver.get(url); time.sleep(5); driver.execute_script("window.scrollTo(0, 2000);"); time.sleep(3)
+        # Սկզբնավորում ենք Driver-ը
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # Սահմանում ենք սպասման առավելագույն ժամանակ (30 վայրկյան)
+        driver.set_page_load_timeout(30)
+        
+        driver.get(url)
+        
+        # Սպասում ենք, որ էջը բեռնվի
+        time.sleep(6) 
+        
+        # Իջնում ենք մի փոքր ներքև, որպեսզի lazy-load տարրերը հայտնվեն
+        driver.execute_script("window.scrollTo(0, 2000);")
+        time.sleep(3)
+        
         found_items = []
+        
+        # --- AMAZON SCRAPING LOGIC ---
         if "amazon" in url.lower():
             blocks = driver.find_elements(By.CSS_SELECTOR, ".a-section.review")
             for b in blocks:
                 try:
-                    text = b.find_element(By.CSS_SELECTOR, "span[data-hook='review-body']").text
-                    star_text = b.find_element(By.CSS_SELECTOR, "i[data-hook='review-star-rating']").get_attribute("innerHTML")
+                    text_el = b.find_element(By.CSS_SELECTOR, "span[data-hook='review-body']")
+                    star_el = b.find_element(By.CSS_SELECTOR, "i[data-hook='review-star-rating']")
+                    
+                    text = text_el.text.strip()
+                    star_text = star_el.get_attribute("innerHTML")
+                    # Քաղում ենք թվային արժեքը (օրինակ՝ "4.0 out of 5 stars" -> 4)
                     rating = int(float(re.search(r"(\d+\.?\d?)", star_text).group(1)))
-                    found_items.append({"text": text, "rating": rating})
-                except: continue
+                    
+                    if len(text) > 5:
+                        found_items.append({"text": text, "rating": rating})
+                except:
+                    continue
+
+        # --- OZON SCRAPING LOGIC ---
         elif "ozon" in url.lower():
+            # Ozon-ի դեպքում սելեկտորները հաճախ փոխվում են, սա ամենաթարմ տարբերակն է
             texts = driver.find_elements(By.CSS_SELECTOR, "span.tsBodyM")
             for t in texts:
-                if len(t.text) > 10: found_items.append({"text": t.text, "rating": 5})
-        driver.quit(); return found_items, None
-    except Exception as e:
-        if 'driver' in locals(): driver.quit()
-        return None, f"Կապի սխալ. {str(e)}"
+                val = t.text.strip()
+                if len(val) > 15: # Զտում ենք կարճ կամ անիմաստ տեքստերը
+                    found_items.append({"text": val, "rating": 5}) # Ozon-ի համար դնում ենք default 5
+        
+        # Եթե ոչ մի տվյալ չգտանք
+        if not found_items:
+            return None, "Մեկնաբանություններ չգտնվեցին: Հնարավոր է էջը պաշտպանված է կամ սելեկտորները փոխվել են:"
 
+        driver.quit()
+        return found_items, None
+
+    except Exception as e:
+        if driver:
+            driver.quit()
+        return None, f"Կապի սխալ: {str(e)}"
 # --- 5. DATA & AUTH ---
 def load_users():
     if os.path.exists(USER_DB):
