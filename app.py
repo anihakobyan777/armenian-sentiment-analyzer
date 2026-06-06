@@ -111,9 +111,7 @@ def fetch_data(url):
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
     driver = None
     try:
@@ -125,59 +123,46 @@ def fetch_data(url):
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=options)
 
-        # Կիրառում ենք Stealth՝ բոտ լինելը թաքցնելու համար
-        stealth(driver,
-            languages=["en-US", "en"],
-            vendor="Google Inc.",
-            platform="Win32",
-            webgl_vendor="Intel Inc.",
-            renderer="Intel Iris OpenGL Engine",
-            fix_hairline=True,
-        )
-
-        # Amazon-ի համար փոխում ենք հղումը դեպի «բոլոր մեկնաբանությունները», որն ավելի հեշտ է կարդալ
-        if "amazon.com" in url.lower() and "/dp/" in url.lower():
-            asin = url.split("/dp/")[1].split("/")[0].split("?")[0]
-            url = f"https://www.amazon.com/product-reviews/{asin}/ref=cm_cr_dp_d_show_all_btm?ie=UTF8&reviewerType=all_reviews"
-
+        # Բացում ենք էջը
         driver.get(url)
-        time.sleep(8) # Սպասում ենք ավելի երկար
+        time.sleep(10) # Տալիս ենք 10 վայրկյան, որ նույնիսկ դանդաղ սերվերը բեռնի
 
         found_items = []
 
-        # --- AMAZON LOGIC ---
-        if "amazon" in url.lower():
-            # Փորձում ենք գտնել մեկնաբանության բլոկները
-            reviews = driver.find_elements(By.CSS_SELECTOR, "div[data-hook='review']")
+        # --- WILDBERRIES LOGIC (Ամենակայունը) ---
+        if "wildberries" in url.lower():
+            # WB-ի մեկնաբանությունները սովորաբար այս դասի մեջ են
+            reviews = driver.find_elements(By.CSS_SELECTOR, ".feedback__text")
             for r in reviews:
-                try:
-                    text = r.find_element(By.CSS_SELECTOR, "span[data-hook='review-body']").text.strip()
-                    stars_el = r.find_element(By.CSS_SELECTOR, "i[data-hook='review-star-rating'] span.a-icon-alt")
-                    rating = int(float(stars_el.get_attribute("innerHTML").split()[0]))
-                    if len(text) > 10:
-                        found_items.append({"text": text, "rating": rating})
-                except: continue
+                val = r.text.strip()
+                if len(val) > 10:
+                    found_items.append({"text": val, "rating": 5})
 
         # --- OZON LOGIC ---
         elif "ozon" in url.lower():
-            # Ozon-ը շատ բարդ է, փորձում ենք գտնել բոլոր span-ները, որոնք ունեն երկար տեքստ
-            spans = driver.find_elements(By.TAG_NAME, "span")
+            # Փնտրում ենք բոլոր հնարավոր տեքստային բլոկները
+            spans = driver.find_elements(By.CSS_SELECTOR, "span")
             for s in spans:
-                try:
-                    val = s.text.strip()
-                    # Ozon-ի մեկնաբանությունները սովորաբար երկար են և չունեն կոնկրետ դաս (class)
-                    if len(val) > 40 and not any(x in val for x in ["©", "Ozon", "Доставка", "Цена"]):
-                        found_items.append({"text": val, "rating": 5})
-                except: continue
+                val = s.text.strip()
+                if len(val) > 40 and not any(x in val for x in ["©", "Ozon", "Доставка"]):
+                    found_items.append({"text": val, "rating": 5})
+
+        # --- AMAZON LOGIC ---
+        elif "amazon" in url.lower():
+            reviews = driver.find_elements(By.CSS_SELECTOR, "[data-hook='review-body']")
+            for r in reviews:
+                val = r.text.strip()
+                if len(val) > 10:
+                    found_items.append({"text": val, "rating": 4})
 
         driver.quit()
 
-        if len(found_items) > 0:
-            # Հեռացնում ենք կրկնվող մեկնաբանությունները
-            unique_items = {v['text']: v for v in found_items}.values()
-            return list(unique_items), None
+        if found_items:
+            # Հեռացնում ենք կրկնությունները
+            unique = {v['text']: v for v in found_items}.values()
+            return list(unique), None
         
-        return None, "Տվյալներ չգտնվեցին: Կայքը հայտնաբերեց բոտին կամ էջը դատարկ է:"
+        return None, "Տվյալներ չգտնվեցին: Կայքը պաշտպանված է կամ հղումը սխալ է:"
 
     except Exception as e:
         if driver: driver.quit()
