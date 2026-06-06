@@ -27,35 +27,44 @@ st.set_page_config(layout="wide", page_title="Market Intelligence AI Pro", page_
 st.markdown("""
     <style>
     /* Ընդհանուր քարտի ոճը */
-    .info-card { background-color: #fdfdfe; border-left: 8px solid #6c757d; color: #343a40; padding: 20px; border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+    .info-card { background-color: #1e2130; border-radius: 12px; padding: 20px; border: 1px solid #3d4156; }
     
-    /* Կողմեր (Pros) - Մուգ կանաչ տեքստ բաց կանաչ ֆոնի վրա */
+    /* Կողմեր (Pros) */
     .pro-box { 
-        background-color: #e6f4ea; 
+        background-color: #d4edda; 
         color: #155724; 
-        border-radius: 10px; 
-        padding: 12px; 
-        border-left: 6px solid #28a745; 
+        border-radius: 8px; 
+        padding: 10px; 
+        border-left: 5px solid #28a745; 
         margin-bottom: 8px; 
-        font-weight: bold; 
-        font-size: 15px;
+        font-weight: bold;
     }
     
-    /* Դեմեր (Cons) - Մուգ կարմիր տեքստ բաց կարմիր ֆոնի վրա */
+    /* Դեմեր (Cons) */
     .con-box { 
-        background-color: #fce8e8; 
+        background-color: #f8d7da; 
         color: #721c24; 
-        border-radius: 10px; 
-        padding: 12px; 
-        border-left: 6px solid #ff4b4b; 
+        border-radius: 8px; 
+        padding: 10px; 
+        border-left: 5px solid #dc3545; 
         margin-bottom: 8px; 
-        font-weight: bold; 
-        font-size: 15px;
+        font-weight: bold;
     }
     
-    .rating-display { font-size: 36px; color: #f1c40f; font-weight: bold; }
-    .xp-badge { background-color: #f1c40f; color: white; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px; }
-    .verdict-box { padding: 15px; border-radius: 10px; font-weight: bold; font-size: 20px; text-align: center; margin-top: 10px; }
+    .rating-display { font-size: 42px; color: #f1c40f; font-weight: bold; }
+    
+    /* Verdict Box - Ուղղված տեքստի գույնով */
+    .verdict-box { 
+        padding: 20px; 
+        border-radius: 10px; 
+        font-weight: 900; 
+        font-size: 24px; 
+        text-align: center; 
+        margin-top: 15px;
+        color: #1a1c23; /* Մուգ տեքստ բաց ֆոնի վրա */
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -110,13 +119,11 @@ def fetch_data(url):
     # --- 1. ՆԱԽԱՊԱՏՐԱՍՏՎԱԾ ԴԵՄՈ ՏՎՅԱԼՆԵՐ (Fallback Data) ---
     demo_items = [
         {"text": "Shat lav koshikner en, vorakը hianali e, mersi!", "rating": 5},
-        {"text": "Es inch eq uxarkel, lriv kshrvac er, hiasptapvac em", "rating": 1},
         {"text": "Arag araqum, bayc mi kich tank er, vorak@ normal a", "rating": 4},
-        {"text": "Very comfortable shoes, fast delivery. Worth the price.", "rating": 5},
-        {"text": "Vat er, mi orva mej ktrvec, mi gneq sranic", "rating": 1},
-        {"text": "Отличное качество, оригинал, очень доволен покупкой!", "rating": 5},
-        {"text": "Normal apranq e, bayc guyn@ mi kich bac er ekel", "rating": 3},
-        {"text": "The box was damaged and shoes look fake. Do not buy!", "rating": 1}
+        {"text": "Very comfortable shoes, genuine quality. Worth the price.", "rating": 5},
+        {"text": "Lriv original koshikner en, hianali nstec votkis", "rating": 5},
+        {"text": "The box was a bit damaged, but the product is perfect.", "rating": 4},
+        {"text": "Գերազանց որակ է, արագ հասավ, շնորհակալություն:", "rating": 5}
     ]
 
     options = Options()
@@ -346,45 +353,55 @@ else:
         if st.session_state.last_res:
             res = st.session_state.last_res
             st.divider()
-            st.header(f"📊 Արդյունք: {res['name']}")
+            st.markdown(f"### 📊 Արդյունք: {res['name']}")
             
-            c1, c2 = st.columns([1, 2])
+            c1, c2 = st.columns([1, 1.5])
             with c1:
                 st.markdown(f"<div class='rating-display'>{res['stars']} / 5 ⭐</div>", unsafe_allow_html=True)
+                # Շրջանաձև գրաֆիկ
                 fig = px.pie(values=[res['pos'], 100-res['pos']], 
                              names=['Դրական', 'Բացասական'], 
                              color_discrete_sequence=['#28a745', '#dc3545'], 
-                             hole=0.6)
-                fig.update_layout(showlegend=False, height=250, margin=dict(t=0, b=0, l=0, r=0))
+                             hole=0.7)
+                fig.update_layout(showlegend=False, height=250, margin=dict(t=0, b=0, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Verdict Box
-                v_text = "ԳՆԵԼ" if res['pos'] > 70 else "ԶԳՈՒՇԱՆԱԼ" if res['pos'] > 40 else "ՉԳՆԵԼ"
-                v_color = "#e6f4ea" if res['pos'] > 70 else "#fff4e5" if res['pos'] > 40 else "#fce8e8"
-                st.markdown(f"<div class='verdict-box' style='background-color:{v_color};'>Verdict: {v_text}</div>", unsafe_allow_html=True)
+                # VERDICT LOGIC
+                if res['pos'] >= 75:
+                    v_text, v_color = "Verdict: ԳՆԵԼ", "#d4edda"
+                elif res['pos'] >= 45:
+                    v_text, v_color = "Verdict: ԶԳՈՒՇԱՆԱԼ", "#fff3cd"
+                else:
+                    v_text, v_color = "Verdict: ՉԳՆԵԼ", "#f8d7da"
+                
+                st.markdown(f"<div class='verdict-box' style='background-color:{v_color};'>{v_text}</div>", unsafe_allow_html=True)
 
             with c2:
                 st.subheader("🤖 AI Insights (Custom ML)")
                 col_p, col_c = st.columns(2)
                 with col_p:
                     st.write("✅ **Կողմեր:**")
-                    if res['pros']:
-                        for p in res['pros']: st.markdown(f"<div class='pro-box'>{p}</div>", unsafe_allow_html=True)
-                    else: st.write("Հստակ կողմեր չեն գտնվել")
+                    # Զտում ենք, որ Pros-ի մեջ «Ցածր որակ» չլինի
+                    final_pros = [p for p in res['pros'] if "Ցածր" not in p]
+                    if final_pros:
+                        for p in final_pros: st.markdown(f"<div class='pro-box'>{p}</div>", unsafe_allow_html=True)
+                    else: st.write("Հստակ կողմեր չկան")
+
                 with col_c:
                     st.write("❌ **Դեմեր:**")
-                    if res['cons']:
-                        for c in res['cons']: st.markdown(f"<div class='con-box'>{c}</div>", unsafe_allow_html=True)
-                    else: st.write("Հստակ դեմեր չեն գտնվել")
+                    # Դեմերի մեջ թողնում ենք միայն բացասականը (օրինակ՝ Թանկ գին)
+                    final_cons = [c for c in res['cons'] if "Բարձր" not in c]
+                    if final_cons:
+                        for c in final_cons: st.markdown(f"<div class='con-box'>{c}</div>", unsafe_allow_html=True)
+                    else: st.write("Թերություններ չկան")
                 
-                # Արագ հղումներ այլ խանութներում
-                st.write("🔎 Փնտրել այլ հարթակներում՝")
-                q = urllib.parse.quote(res['name'])
-                l1, l2, l3, l4 = st.columns(4)
-                l1.link_button("WB", f"https://www.wildberries.am/search?query={q}")
-                l2.link_button("Ozon", f"https://www.ozon.ru/search/?text={q}")
-                l3.link_button("Amazon", f"https://www.amazon.com/s?k={q}")
-                l4.link_button("Temu", f"https://www.temu.com/search_result.html?search_key={q}")
+                st.write("🔎 **Փնտրել այլ հարթակներում**")
+                q_link = urllib.parse.quote(res['name'])
+                l_cols = st.columns(4)
+                l_cols[0].link_button("WB", f"https://www.wildberries.am/search?query={q_link}")
+                l_cols[1].link_button("Ozon", f"https://www.ozon.ru/search/?text={q_link}")
+                l_cols[2].link_button("Amazon", f"https://www.amazon.com/s?k={q_link}")
+                l_cols[3].link_button("Temu", f"https://www.temu.com/search_result.html?search_key={q_link}")
 
     # --- ՏԱԲ 2: CSV ՎԵՐԼՈՒԾՈՒԹՅՈՒՆ ---
     with tab_csv:
